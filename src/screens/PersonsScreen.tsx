@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, FlatList, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { SafeAreaView, View, Text, FlatList, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../../firebaseConfig';
 import { useNavigation } from '@react-navigation/native';
@@ -55,10 +55,14 @@ export default function UsersScreen() {
   }, []);
 
   const renderItem = ({ item }: { item: User }) => (
-    <View style={styles.userItem}>
+    <TouchableOpacity
+      style={styles.userItem}
+      onPress={() => navigation.navigate('PersonDetail', { user: item })}
+    >
       <Text style={styles.userName}>{`${item.nombres} ${item.apellidos}`}</Text>
       <Text style={styles.userDetail}>{`Documento: ${item.tipoDocumento} ${item.numeroDocumento}`}</Text>
-    </View>
+      {/* Puedes agregar más detalles si lo deseas */}
+    </TouchableOpacity>
   );
 
   if (loading) {
@@ -70,73 +74,70 @@ export default function UsersScreen() {
   }
 
   return (
-    <View style={styles.container}>
-      <FlatList
-        data={users}
-        keyExtractor={(item) => item.id}
-        renderItem={renderItem}
-        contentContainerStyle={styles.list}
-        showsVerticalScrollIndicator={false}
-      />
-      <TouchableOpacity
-        style={styles.addButton}
-        onPress={() => navigation.navigate('RegisterUser')}
-      >
-        <Text style={styles.addButtonText}>Registrar Usuario</Text>
-      </TouchableOpacity>
-    </View>
+    <SafeAreaView style={styles.safeArea}>
+        <View style={styles.container}>
+            <FlatList
+                data={users}
+                keyExtractor={(item) => item.id}
+                renderItem={renderItem}
+                contentContainerStyle={[styles.list, { flexGrow: 1 }]}
+            />
+            <TouchableOpacity
+                style={styles.addButton}
+                onPress={() => navigation.navigate('RegisterUser')}
+            >
+                <Text style={styles.addButtonText}>Registrar Usuario</Text>
+            </TouchableOpacity>
+        </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    backgroundColor: '#F0F4F8',
-  },
-  list: {
-    paddingBottom: 100, // Espacio extra para evitar que el botón cubra el contenido
-  },
-  userItem: {
-    backgroundColor: '#FFFFFF',
-    padding: 16,
-    marginBottom: 8,
-    borderRadius: 8,
-    borderColor: '#E2E8F0',
-    borderWidth: 1,
-  },
-  userName: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#2B6CB0',
-  },
-  userDetail: {
-    fontSize: 14,
-    color: '#4A5568',
-  },
-  addButton: {
-    position: 'absolute',
-    bottom: 20,
-    right: 20,
-    backgroundColor: '#3182CE',
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 50,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 3.84,
-    elevation: 5, // Sombra para el botón
-  },
-  addButtonText: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-  },
-  loaderContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+    safeArea: {
+        flex: 1,
+        backgroundColor: '#fff', // Opcional, según el diseño
+    },
+    container: {
+        flex: 1,
+        padding: 16,
+    },
+    list: {
+        paddingBottom: 100,
+    },
+    userItem: {
+        backgroundColor: '#FFFFFF',
+        padding: 16,
+        marginBottom: 8,
+        borderRadius: 8,
+        borderColor: '#E2E8F0',
+        borderWidth: 1,
+    },
+    userName: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        color: '#2B6CB0',
+    },
+    userDetail: {
+        fontSize: 14,
+        color: '#4A5568',
+    },
+    addButton: {
+        position: 'absolute',
+        bottom: 20,
+        right: 20,
+        backgroundColor: '#3182CE',
+        padding: 16,
+        borderRadius: 50,
+        alignItems: 'center',
+    },
+    addButtonText: {
+        color: '#FFFFFF',
+        fontWeight: 'bold',
+    },
+    loaderContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
 });
