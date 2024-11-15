@@ -1,27 +1,27 @@
-import React, { useState } from 'react'
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, SafeAreaView, KeyboardAvoidingView, Platform, Alert } from 'react-native'
-import { auth } from '../../firebaseConfig'
-import { signInWithEmailAndPassword } from 'firebase/auth'
-import { LoginScreenNavigationProp } from '../navigation/navigation'
+import React, { useState } from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, SafeAreaView, KeyboardAvoidingView, Platform, Alert } from 'react-native';
+import { auth } from '../../firebaseConfig';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { AuthStackParamList } from '../navigation/types';
+import { StackNavigationProp } from '@react-navigation/stack';
+
+type LoginScreenNavigationProp = StackNavigationProp<AuthStackParamList, 'Login'>;
 
 type Props = {
-  navigation: LoginScreenNavigationProp
-}
+  navigation: LoginScreenNavigationProp;
+};
 
 export default function LoginScreen({ navigation }: Props) {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
 
   const loginUser = () => {
     signInWithEmailAndPassword(auth, email, password)
-      .then(() => {
-        navigation.replace('Home')
-      })
       .catch(error => {
-        Alert.alert('Error de inicio de sesión', error.message)
-      })
-  }
-
+        Alert.alert('Error de inicio de sesión', error.message);
+      });
+  };
+  
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView 
