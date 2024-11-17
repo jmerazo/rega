@@ -1,4 +1,3 @@
-// Sidebar.tsx
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { DrawerContentScrollView, DrawerContentComponentProps } from '@react-navigation/drawer';
@@ -9,6 +8,8 @@ import { doc, getDoc } from 'firebase/firestore';
 export default function Sidebar(props: DrawerContentComponentProps) {
   const [user, setUser] = useState<User | null>(null);
   const [role, setRole] = useState<string | null>(null);
+  const [name, setName] = useState<string | null>(null);
+  const [lastname, setLastname] = useState<string | null>(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -17,13 +18,19 @@ export default function Sidebar(props: DrawerContentComponentProps) {
         const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
         if (userDoc.exists()) {
           const userData = userDoc.data();
-          setRole(userData.role || null); // Obtén el rol del usuario
+          setRole(userData.role || null); // Set role
+          setName(userData.name || null); // Set name
+          setLastname(userData.lastname || null); // Set lastname
         } else {
           setRole(null);
+          setName(null);
+          setLastname(null);
         }
       } else {
         setUser(null);
         setRole(null);
+        setName(null);
+        setLastname(null);
       }
     });
     return unsubscribe;
@@ -47,19 +54,9 @@ export default function Sidebar(props: DrawerContentComponentProps) {
             </Text>
           </View>
         )}
-        <Text style={styles.userName}>{user?.displayName || 'Usuario'}</Text>
+        <Text style={styles.userName}>{name || 'Nombre no disponible'} {lastname || ''}</Text>
         <Text style={styles.userEmail}>{user?.email || 'Correo no disponible'}</Text>
         <Text style={styles.userRole}>Rol: {role || 'Sin asignar'}</Text>
-
-        {/* Botón para navegar al Panel de Administración */}
-        {role === 'Administrador' && (
-          <TouchableOpacity
-            style={styles.adminButton}
-            onPress={() => props.navigation.navigate('AdminPanel')}
-          >
-            <Text style={styles.adminButtonText}>Panel de Administración</Text>
-          </TouchableOpacity>
-        )}
 
         <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
           <Text style={styles.logoutButtonText}>Cerrar Sesión</Text>

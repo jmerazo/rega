@@ -1,10 +1,11 @@
 {
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
-    "strict": true
+    "strict": true,
+    "forceConsistentCasingInFileNames": true
   },
   "include": [
     "src",
-    "react-native-vector-icons.d.ts" // Asegúrate de que está incluido aquí
+    "react-native-vector-icons.d.ts"
   ]
 }

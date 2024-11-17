@@ -1,10 +1,12 @@
 // BottomTabNavigator.tsx
-import React from 'react';
+import React, { useContext } from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import AdminUsersScreen from '../screens/AdminUsersScreen'
 import HomeScreen from '../screens/HomeScreen';
 import PersonsStackNavigator from './PersonsStackNavigator';
+import AdminUsersStackNavigator from './AdminUsersStackNavigator';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import { RoleContext } from '../utils/RoleContext';
 
 export type BottomTabParamList = {
   Home: undefined;
@@ -15,6 +17,7 @@ export type BottomTabParamList = {
 const Tab = createBottomTabNavigator<BottomTabParamList>();
 
 export default function BottomTabNavigator() {
+  const role = useContext(RoleContext);
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -32,7 +35,9 @@ export default function BottomTabNavigator() {
       <Tab.Screen name="Home" component={HomeScreen} options={{ headerShown: false }} />
       <Tab.Screen name="Users" component={PersonsStackNavigator} options={{ headerShown: false, title: 'Usuarios' }} />
       {/* Si la pantalla RegisterScreen es diferente a RegisterUserScreen */}
-      <Tab.Screen name="Panel" component={AdminUsersScreen} options={{ headerShown: false, title: 'Panel Administración' }} />
+      {role === 'Administrador' && (
+        <Tab.Screen name="Panel" component={AdminUsersStackNavigator} options={{ headerShown: false }} />
+      )}
     </Tab.Navigator>
   );
 }

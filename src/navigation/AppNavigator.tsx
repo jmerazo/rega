@@ -9,7 +9,8 @@ import { createStackNavigator } from '@react-navigation/stack';
 import BottomTabNavigator from './BottomTabNavigator';
 import Sidebar from '../components/Sidebar';
 import LoginScreen from '../screens/LoginScreen';
-import AdminUsersScreen from '../screens/AdminUsersScreen';
+import RegisterScreen from '../screens/RegisterScreen';
+import { RoleContext } from '../utils/RoleContext';
 
 const Drawer = createDrawerNavigator();
 const Stack = createStackNavigator();
@@ -54,14 +55,17 @@ export default function AppNavigator() {
   if (initializing) return null; // Muestra un indicador de carga mientras se obtienen los datos
 
   return (
-    <NavigationContainer>
-      {user ? (
-        <DrawerNavigator /> 
-      ) : (
-        <Stack.Navigator screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="Login" component={LoginScreen} />
-        </Stack.Navigator>
-      )}
-    </NavigationContainer>
+    <RoleContext.Provider value={role}>
+      <NavigationContainer>
+        {user ? (
+          <DrawerNavigator />
+        ) : (
+          <Stack.Navigator screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="Login" component={LoginScreen} />
+            <Stack.Screen name="Register" component={RegisterScreen} />
+          </Stack.Navigator>
+        )}
+      </NavigationContainer>
+    </RoleContext.Provider>
   );
 }

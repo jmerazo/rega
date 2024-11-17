@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert } from 'react-native';
-import { collection, addDoc, doc, getDoc } from 'firebase/firestore';
-import { db } from '../../firebaseConfig';
+import { collection, addDoc, doc, getDoc, query, where, getDocs } from 'firebase/firestore';
+import { db, auth } from '../../firebaseConfig';
 import { useNavigation } from '@react-navigation/native';
 import { PersonsStackParamList } from '../navigation/PersonsStackNavigator';
 import { StackNavigationProp } from '@react-navigation/stack';
@@ -12,6 +12,7 @@ type RegisterUserScreenNavigationProp = StackNavigationProp<PersonsStackParamLis
 
 export default function RegisterUserScreen() {
   const navigation = useNavigation<RegisterUserScreenNavigationProp>();
+  const [registrador, setRegistrador] = useState<any>(null);
 
   const [formData, setFormData] = useState({
     tipoDocumento: 'Cédula de ciudadanía',
@@ -21,7 +22,6 @@ export default function RegisterUserScreen() {
     celular: '',
     correo: '',
     ubicacion: '',
-    direccion: '',
     vereda: '',
     departamento: '',
     municipio: '',
@@ -31,10 +31,28 @@ export default function RegisterUserScreen() {
   const [loadingLocation, setLoadingLocation] = useState(true);
   const [municipios, setMunicipios] = useState<string[]>([]);
   const [loadingMunicipios, setLoadingMunicipios] = useState(true);
+  const [nextNumber, setNextNumber] = useState<number | null>(null);
 
   const handleChange = (name: string, value: string) => {
     setFormData({ ...formData, [name]: value });
   };
+
+  // Cargar datos del registrador
+  useEffect(() => {
+    const fetchRegistrador = async () => {
+      const user = auth.currentUser;
+      if (user) {
+        const registradorRef = doc(db, 'users', user.uid);
+        const registradorSnap = await getDoc(registradorRef);
+        if (registradorSnap.exists()) {
+          setRegistrador({ id: user.uid, ...registradorSnap.data() });
+        } else {
+          Alert.alert('Error', 'No se encontró el usuario registrador.');
+        }
+      }
+    };
+    fetchRegistrador();
+  }, []);
 
   const fetchLocation = async () => {
     try {
@@ -59,7 +77,7 @@ export default function RegisterUserScreen() {
   useEffect(() => {
     const fetchDepartment = async () => {
       try {
-        const docRef = doc(db, 'departments', '22'); // '22' es el ID del departamento Putumayo
+        const docRef = doc(db, 'departments', '22'); // ID del departamento
         const docSnap = await getDoc(docRef);
 
         if (docSnap.exists()) {
@@ -67,7 +85,7 @@ export default function RegisterUserScreen() {
           handleChange('departamento', data.name || 'Putumayo');
           setMunicipios(data.localities || []);
         } else {
-          Alert.alert('Error', 'No se encontró el departamento.');
+          Alert.alert('Error', 'No se encontró el documento del departamento.');
         }
       } catch (error) {
         console.error('Error obteniendo el departamento:', error);
@@ -76,13 +94,53 @@ export default function RegisterUserScreen() {
         setLoadingMunicipios(false);
       }
     };
+
     fetchLocation();
     fetchDepartment();
   }, []);
 
+  useEffect(() => {
+    const calculateNextNumber = async () => {
+      if (!registrador) return;
+
+      const q = query(
+        collection(db, 'persons'),
+        where('registradoPor', '==', registrador.id)
+      );
+      const querySnapshot = await getDocs(q);
+
+      const usedNumbers = querySnapshot.docs.map((doc) => Number(doc.data().numeroAsignado));
+      const nextNumber =
+        registrador.currentNumber +
+        (usedNumbers.length > 0
+          ? Math.max(...usedNumbers) - registrador.currentNumber + 1
+          : 0);
+
+      if (nextNumber <= registrador.numberEnd) {
+        setNextNumber(nextNumber);
+        handleChange('numeroAsignado', nextNumber.toString());
+      } else {
+        Alert.alert('Error', 'No hay números disponibles en el rango asignado.');
+        setNextNumber(null);
+      }
+    };
+
+    calculateNextNumber();
+  }, [registrador]);
+
   const registerUser = async () => {
     try {
-      await addDoc(collection(db, 'persons'), formData);
+      if (!nextNumber) {
+        Alert.alert('Error', 'No se pudo asignar un número.');
+        return;
+      }
+
+      const newFormData = {
+        ...formData,
+        registradoPor: registrador.id,
+      };
+
+      await addDoc(collection(db, 'persons'), newFormData);
       Alert.alert('Éxito', 'Usuario registrado correctamente');
       navigation.goBack();
     } catch (error) {
@@ -153,7 +211,6 @@ export default function RegisterUserScreen() {
         keyboardType="email-address"
       />
 
-      {/* Ubicación */}
       <Text style={styles.label}>Ubicación (Lat, Lon)</Text>
       <TextInput
         style={styles.input}
@@ -177,7 +234,11 @@ export default function RegisterUserScreen() {
         style={styles.picker}
         enabled={false}
       >
-        <Picker.Item label={formData.departamento || 'Cargando...'} value={formData.departamento} />
+        {formData.departamento ? (
+          <Picker.Item label={formData.departamento} value={formData.departamento} />
+        ) : (
+          <Picker.Item label="Cargando departamento..." value="" />
+        )}
       </Picker>
 
       <Text style={styles.label}>Municipio</Text>
@@ -200,12 +261,10 @@ export default function RegisterUserScreen() {
       <TextInput
         style={styles.input}
         placeholder="Número Asignado"
-        value={formData.numeroAsignado}
-        onChangeText={(value) => handleChange('numeroAsignado', value)}
-        keyboardType="numeric"
+        value={nextNumber?.toString() || 'Calculando...'}
+        editable={false}
       />
 
-      {/* Botón de registro */}
       <TouchableOpacity style={styles.button} onPress={registerUser}>
         <Text style={styles.buttonText}>Registrar Usuario</Text>
       </TouchableOpacity>
