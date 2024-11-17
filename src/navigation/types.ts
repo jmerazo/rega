@@ -20,4 +20,4 @@ export type BottomTabParamList = {
 export type PersonsStackParamList = {
     UsersList: undefined;
     RegisterUser: undefined;
-  };
+};

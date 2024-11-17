@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
-import { auth } from '../../firebaseConfig';
+import { auth, db } from '../../firebaseConfig';
 import { onAuthStateChanged, User } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
 
 import { createDrawerNavigator } from '@react-navigation/drawer';
 import { createStackNavigator } from '@react-navigation/stack';
 import BottomTabNavigator from './BottomTabNavigator';
 import Sidebar from '../components/Sidebar';
 import LoginScreen from '../screens/LoginScreen';
-import RegisterScreen from '../screens/RegisterScreen';
+import AdminUsersScreen from '../screens/AdminUsersScreen';
 
 const Drawer = createDrawerNavigator();
 const Stack = createStackNavigator();
@@ -26,27 +27,39 @@ function DrawerNavigator() {
 
 export default function AppNavigator() {
   const [user, setUser] = useState<User | null>(null);
+  const [role, setRole] = useState<string | null>(null);
   const [initializing, setInitializing] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      if (initializing) setInitializing(false);
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      if (currentUser) {
+        setUser(currentUser);
+        const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+        if (userDoc.exists()) {
+          const userData = userDoc.data();
+          setRole(userData.role || null); // Obtener el rol del usuario
+        } else {
+          console.log('El usuario no tiene un rol asignado.');
+          setRole(null);
+        }
+      } else {
+        setUser(null);
+        setRole(null);
+      }
+      setInitializing(false);
     });
     return unsubscribe;
-  }, [initializing]);
+  }, []);
 
-  if (initializing) return null; // Puedes mostrar un indicador de carga aquí
+  if (initializing) return null; // Muestra un indicador de carga mientras se obtienen los datos
 
   return (
     <NavigationContainer>
       {user ? (
-        <DrawerNavigator />
+        <DrawerNavigator /> 
       ) : (
         <Stack.Navigator screenOptions={{ headerShown: false }}>
-          {/* Pantallas de autenticación */}
           <Stack.Screen name="Login" component={LoginScreen} />
-          <Stack.Screen name="Register" component={RegisterScreen} />
         </Stack.Navigator>
       )}
     </NavigationContainer>

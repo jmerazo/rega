@@ -13,9 +13,17 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Necesitamos acceso a tu ubicación para registrar los datos correctamente.",
+        "NSLocationAlwaysUsageDescription": "Necesitamos acceso a tu ubicación incluso en segundo plano."
+      }
     },
     "android": {
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -26,3 +34,4 @@
     }
   }
 }
+
