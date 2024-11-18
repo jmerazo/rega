@@ -10,6 +10,7 @@ import BottomTabNavigator from './BottomTabNavigator';
 import Sidebar from '../components/Sidebar';
 import LoginScreen from '../screens/LoginScreen';
 import RegisterScreen from '../screens/RegisterScreen';
+import PasswordResetScreen from '../screens/PasswordResetScreen';
 import { RoleContext } from '../utils/RoleContext';
 
 const Drawer = createDrawerNavigator();
@@ -63,6 +64,7 @@ export default function AppNavigator() {
           <Stack.Navigator screenOptions={{ headerShown: false }}>
             <Stack.Screen name="Login" component={LoginScreen} />
             <Stack.Screen name="Register" component={RegisterScreen} />
+            <Stack.Screen name="PasswordReset" component={PasswordResetScreen} />
           </Stack.Navigator>
         )}
       </NavigationContainer>
