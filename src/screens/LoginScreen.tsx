@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, SafeAreaView, KeyboardAvoidingView, Platform, Alert } from 'react-native';
+import Icon from 'react-native-vector-icons/MaterialIcons';
 import { auth } from '../../firebaseConfig';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { AuthStackParamList } from '../navigation/types';
@@ -14,6 +15,11 @@ type Props = {
 export default function LoginScreen({ navigation }: Props) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false); // Estado para alternar visibilidad
+
+  const togglePasswordVisibility = () => {
+    setShowPassword(!showPassword);
+  };
 
   const loginUser = () => {
     signInWithEmailAndPassword(auth, email, password)
@@ -21,15 +27,15 @@ export default function LoginScreen({ navigation }: Props) {
         Alert.alert('Error de inicio de sesión', error.message);
       });
   };
-  
+
   return (
     <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView 
+      <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={styles.inner}
       >
         <View style={styles.loginContainer}>
-          <Text style={styles.appName}>REGA</Text> {/* Nombre de la app centrado */}
+          <Text style={styles.appName}>REGA</Text>
           <Text style={styles.title}>Iniciar Sesión</Text>
           <TextInput
             style={styles.input}
@@ -40,14 +46,19 @@ export default function LoginScreen({ navigation }: Props) {
             keyboardType="email-address"
             autoCapitalize="none"
           />
-          <TextInput
-            style={styles.input}
-            placeholder="Contraseña"
-            placeholderTextColor="#A0AEC0"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-          />
+          <View style={styles.passwordContainer}>
+            <TextInput
+              style={[styles.input, styles.passwordInput]}
+              placeholder="Contraseña"
+              placeholderTextColor="#A0AEC0"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry={!showPassword}
+            />
+            <TouchableOpacity onPress={togglePasswordVisibility} style={styles.iconButton}>
+              <Icon name={showPassword ? 'visibility' : 'visibility-off'} size={24} color="#A0AEC0" />
+            </TouchableOpacity>
+          </View>
           <TouchableOpacity style={styles.button} onPress={loginUser}>
             <Text style={styles.buttonText}>Iniciar Sesión</Text>
           </TouchableOpacity>
@@ -62,7 +73,7 @@ export default function LoginScreen({ navigation }: Props) {
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
-  )
+  );
 }
 
 const styles = StyleSheet.create({
@@ -80,7 +91,7 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 400,
   },
-  appName: { // Estilo para el nombre de la aplicación
+  appName: {
     fontSize: 50,
     fontWeight: '800',
     color: '#2B6CB0',
@@ -103,6 +114,19 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
+  passwordContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  passwordInput: {
+    flex: 1,
+  },
+  iconButton: {
+    position: 'absolute',
+    right: 10,
+    padding: 10,
+  },
   button: {
     backgroundColor: '#3182CE',
     borderRadius: 10,
@@ -123,4 +147,4 @@ const styles = StyleSheet.create({
     color: '#4299E1',
     fontSize: 14,
   },
-})
+});

@@ -9,7 +9,16 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
-import { collection, query, where, onSnapshot, doc, getDoc } from 'firebase/firestore';
+import NetInfo from '@react-native-community/netinfo';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  collection,
+  query,
+  where,
+  onSnapshot,
+  doc,
+  getDoc,
+} from 'firebase/firestore';
 import { db, auth } from '../../firebaseConfig';
 import { useNavigation } from '@react-navigation/native';
 import { CompositeNavigationProp } from '@react-navigation/native';
@@ -30,7 +39,7 @@ export default function UsersScreen() {
   const navigation = useNavigation<UsersScreenNavigationProp>();
 
   useEffect(() => {
-    const fetchRoleAndUsers = async () => {
+    const fetchRoleAndMonitorUsers = async () => {
       const currentUser = auth.currentUser;
       if (!currentUser) {
         Alert.alert('Error', 'No se pudo obtener el usuario actual.');
@@ -38,49 +47,64 @@ export default function UsersScreen() {
         return;
       }
 
-      // Obtener el rol del usuario logueado
-      const userDocRef = doc(db, 'users', currentUser.uid);
-      const userDocSnap = await getDoc(userDocRef);
+      try {
+        // Obtener el rol del usuario logueado
+        const userDocRef = doc(db, 'users', currentUser.uid);
+        const userDocSnap = await getDoc(userDocRef);
 
-      if (userDocSnap.exists()) {
-        const role = userDocSnap.data()?.role || null;
-        setUserRole(role);
+        if (userDocSnap.exists()) {
+          const role = userDocSnap.data()?.role || null;
+          setUserRole(role);
 
-        // Configurar la consulta según el rol
-        let usersQuery;
-        if (role === 'Registrador') {
-          usersQuery = query(
-            collection(db, 'persons'),
-            where('registradoPor', '==', currentUser.uid)
-          );
-        } else if (role === 'Administrador') {
-          usersQuery = collection(db, 'persons');
+          // Cargar datos locales desde AsyncStorage
+          const localData = await AsyncStorage.getItem('users');
+          if (localData) {
+            setUsers(JSON.parse(localData));
+          }
+
+          // Monitorear cambios en tiempo real desde Firestore
+          monitorFirestoreData(role, currentUser.uid);
         } else {
-          Alert.alert('Error', 'Rol desconocido.');
-          setLoading(false);
-          return;
+          Alert.alert('Error', 'No se encontró información del usuario.');
         }
-
-        // Escuchar los cambios en tiempo real
-        const unsubscribe = onSnapshot(usersQuery, (querySnapshot) => {
-          const usersList: any[] = [];
-          querySnapshot.forEach((doc) => {
-            usersList.push({ id: doc.id, ...doc.data() });
-          });
-          setUsers(usersList);
-          setLoading(false);
-        });
-
-        // Limpiar la suscripción al desmontar el componente
-        return () => unsubscribe();
-      } else {
-        Alert.alert('Error', 'No se encontró información del usuario.');
+      } catch (error) {
+        console.error('Error al cargar datos:', error);
+        Alert.alert('Error', 'Ocurrió un error al cargar los datos.');
+      } finally {
         setLoading(false);
       }
     };
 
-    fetchRoleAndUsers();
+    fetchRoleAndMonitorUsers();
   }, []);
+
+  const monitorFirestoreData = (role: string, userId: string) => {
+    let usersQuery;
+    if (role === 'Registrador') {
+      usersQuery = query(
+        collection(db, 'persons'),
+        where('registradoPor', '==', userId)
+      );
+    } else if (role === 'Administrador') {
+      usersQuery = collection(db, 'persons');
+    } else {
+      return;
+    }
+
+    // Monitorear cambios en Firestore con `onSnapshot`
+    const unsubscribe = onSnapshot(usersQuery, async (snapshot) => {
+      const firestoreUsers: any[] = [];
+      snapshot.forEach((doc) => {
+        firestoreUsers.push({ id: doc.id, ...doc.data() });
+      });
+
+      // Actualizar estado local y guardar en AsyncStorage
+      setUsers(firestoreUsers);
+      await AsyncStorage.setItem('users', JSON.stringify(firestoreUsers));
+    });
+
+    return unsubscribe;
+  };
 
   const renderItem = ({ item }: { item: any }) => (
     <TouchableOpacity
@@ -96,6 +120,7 @@ export default function UsersScreen() {
     return (
       <View style={styles.loaderContainer}>
         <ActivityIndicator size="large" color="#004085" />
+        <Text style={styles.loaderText}>Cargando usuarios...</Text>
       </View>
     );
   }
@@ -169,6 +194,11 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  loaderText: {
+    marginTop: 8,
+    fontSize: 16,
+    color: '#4A5568',
   },
   emptyText: {
     textAlign: 'center',

@@ -13,11 +13,11 @@ export type User = {
     celular: string;
     correo: string;
     ubicacion: string;
-    direccion: string;
     vereda: string;
     departamento: string;
     municipio: string;
     numeroAsignado: string;
+    isSynced: number;
 };
 
 export type PersonsStackParamList = {

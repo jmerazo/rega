@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { getAuth, setPersistence, browserLocalPersistence } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
 // Configuración de Firebase
@@ -24,6 +24,11 @@ if (!getApps().length) {
 // Inicializa los servicios que vas a utilizar
 const auth = getAuth(app);
 const db = getFirestore(app);
+
+// Configura la persistencia de sesión como LOCAL
+setPersistence(auth, browserLocalPersistence).catch((error) => {
+  console.error('Error configurando persistencia:', error.message);
+});
 
 // Exporta los servicios para usarlos en otras partes de tu aplicación
 export { auth, db };

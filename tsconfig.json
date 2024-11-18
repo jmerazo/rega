@@ -1,11 +1,22 @@
 {
-  "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "typeRoots": [
+      "./node_modules/@types",
+      "./@types"
+    ],
+    "target": "ESNext",
+    "module": "ESNext",
+    "jsx": "react-native",
+    "skipLibCheck": true,
+    "moduleResolution": "node",
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true
   },
   "include": [
     "src",
     "react-native-vector-icons.d.ts"
-  ]
+  ],
+  "extends": "expo/tsconfig.base"
 }

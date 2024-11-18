@@ -1,10 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, FlatList, StyleSheet, Alert } from 'react-native';
-import { collection, getDocs } from 'firebase/firestore';
-import { doc, updateDoc } from 'firebase/firestore';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  FlatList,
+  StyleSheet,
+  Alert,
+  ActivityIndicator,
+} from 'react-native';
+import { collection, getDocs, onSnapshot, doc, updateDoc } from 'firebase/firestore';
+import NetInfo from '@react-native-community/netinfo';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { db } from '../../firebaseConfig';
+import Icon from 'react-native-vector-icons/MaterialIcons';
 
-// Función para asignar rol y rango
 async function assignRoleWithRange(userId: string, role: string, users: any[]) {
   try {
     const userRef = doc(db, 'users', userId);
@@ -13,18 +22,34 @@ async function assignRoleWithRange(userId: string, role: string, users: any[]) {
     let numberEnd = null;
 
     if (role === 'Registrador') {
-      // Obtener el último rango asignado
-      const lastAssigned = users
-        .filter((user) => user.role === 'Registrador' && user.numberEnd)
-        .sort((a, b) => b.numberEnd - a.numberEnd)[0];
+      const assignedRanges = users
+        .filter((user) => user.numberInit && user.numberEnd)
+        .map((user) => ({
+          start: user.numberInit,
+          end: user.numberEnd,
+          occupied: user.role === 'Registrador',
+        }))
+        .sort((a, b) => a.start - b.start);
 
-      numberInit = lastAssigned ? lastAssigned.numberEnd + 1 : 1;
-      numberEnd = numberInit + 199; // Rango fijo de 200
+      let found = false;
+      for (const range of assignedRanges) {
+        if (!range.occupied) {
+          numberInit = range.start;
+          numberEnd = range.end;
+          found = true;
+          break;
+        }
+      }
+
+      if (!found) {
+        const lastAssigned = assignedRanges[assignedRanges.length - 1];
+        numberInit = lastAssigned ? lastAssigned.end + 1 : 1;
+        numberEnd = numberInit + 199;
+      }
     }
 
-    // Actualizar el rol y rango en el documento del usuario
     await updateDoc(userRef, {
-      role: role,
+      role,
       numberInit: numberInit || null,
       numberEnd: numberEnd || null,
       currentNumber: numberInit || null,
@@ -46,84 +71,110 @@ export default function UsersListScreen() {
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Función para cargar usuarios desde Firebase
-  const fetchUsers = async () => {
+  const syncFirestoreWithLocal = async () => {
     try {
-      const querySnapshot = await getDocs(collection(db, 'users'));
-      const userList = querySnapshot.docs.map((doc) => ({
-        id: doc.id,
-        name: doc.data().name || 'Nombre no disponible',
-        lastname: doc.data().lastname || '',
-        email: doc.data().email || 'Correo no disponible',
-        role: doc.data().role || 'No asignado',
-        numberInit: doc.data().numberInit || null,
-        numberEnd: doc.data().numberEnd || null,
-        ...doc.data(),
-      }));
-      setUsers(userList);
+      const storedUsers = JSON.parse((await AsyncStorage.getItem('users')) || '[]');
+      const netInfo = await NetInfo.fetch();
+
+      if (netInfo.isConnected) {
+        const querySnapshot = await getDocs(collection(db, 'users'));
+        const userList = querySnapshot.docs.map((doc) => ({
+          id: doc.id,
+          name: doc.data().name || 'Nombre no disponible',
+          lastname: doc.data().lastname || '',
+          email: doc.data().email || 'Correo no disponible',
+          role: doc.data().role || 'No asignado',
+          numberInit: doc.data().numberInit || null,
+          numberEnd: doc.data().numberEnd || null,
+          ...doc.data(),
+        }));
+
+        // Actualizar local si hay cambios
+        const isDifferent =
+          JSON.stringify(storedUsers) !== JSON.stringify(userList);
+
+        if (isDifferent) {
+          await AsyncStorage.setItem('users', JSON.stringify(userList));
+          setUsers(userList);
+        }
+      } else {
+        // Cargar desde almacenamiento local
+        setUsers(storedUsers);
+      }
     } catch (error) {
-      console.error('Error al obtener usuarios:', error);
-      Alert.alert('Error', 'No se pudieron cargar los usuarios.');
+      console.error('Error al sincronizar datos:', error);
+      Alert.alert('Error', 'No se pudieron sincronizar los datos.');
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchUsers();
+    // Sincronizar datos al cargar la vista
+    syncFirestoreWithLocal();
+
+    // Escuchar cambios en tiempo real en Firestore
+    const unsubscribe = onSnapshot(collection(db, 'users'), async () => {
+      await syncFirestoreWithLocal();
+    });
+
+    return () => unsubscribe();
   }, []);
 
   const handleAssignRole = async (userId: string, role: string) => {
     await assignRoleWithRange(userId, role, users);
-    // Recargar usuarios después de asignar el rol
-    await fetchUsers();
+    await syncFirestoreWithLocal();
   };
 
   const renderItem = ({ item }: { item: any }) => (
     <View style={styles.userItem}>
-      <Text style={styles.userName}>
-        {item.name} {item.lastname}
-      </Text>
-      <Text style={styles.userEmail}>{item.email}</Text>
-      <Text style={styles.userRole}>
-        Rol actual: {item.role}
-        {item.role === 'Registrador' && item.numberInit && item.numberEnd
-          ? ` (Rango: ${item.numberInit}-${item.numberEnd})`
-          : ''}
-      </Text>
-      <TouchableOpacity
-        style={styles.assignButton}
-        onPress={() => handleAssignRole(item.id, 'Administrador')}
-      >
-        <Text style={styles.assignButtonText}>Asignar Administrador</Text>
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={styles.assignButton}
-        onPress={() => handleAssignRole(item.id, 'Usuario')}
-      >
-        <Text style={styles.assignButtonText}>Asignar Usuario</Text>
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={styles.assignButton}
-        onPress={() => handleAssignRole(item.id, 'Registrador')}
-      >
-        <Text style={styles.assignButtonText}>Asignar Registrador</Text>
-      </TouchableOpacity>
+      <Icon name="person" size={24} color="#2B6CB0" style={styles.userIcon} />
+      <View style={styles.userInfo}>
+        <Text style={styles.userName}>{`${item.name} ${item.lastname}`}</Text>
+        <Text style={styles.userEmail}>{item.email}</Text>
+        <Text style={styles.userRole}>
+          {`Rol actual: ${item.role}`}
+          {item.role === 'Registrador' && item.numberInit && item.numberEnd
+            ? ` (Rango: ${item.numberInit}-${item.numberEnd})`
+            : ''}
+        </Text>
+      </View>
+      <View style={styles.buttonContainer}>
+        <TouchableOpacity
+          style={[styles.assignButton, { backgroundColor: '#28A745' }]}
+          onPress={() => handleAssignRole(item.id, 'Administrador')}
+        >
+          <Text style={styles.assignButtonText}>Administrador</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.assignButton, { backgroundColor: '#FFC107' }]}
+          onPress={() => handleAssignRole(item.id, 'Usuario')}
+        >
+          <Text style={styles.assignButtonText}>Usuario</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.assignButton, { backgroundColor: '#007BFF' }]}
+          onPress={() => handleAssignRole(item.id, 'Registrador')}
+        >
+          <Text style={styles.assignButtonText}>Registrador</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 
   if (loading) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <Text>Cargando usuarios...</Text>
+      <View style={styles.loaderContainer}>
+        <ActivityIndicator size="large" color="#004085" />
+        <Text style={styles.loaderText}>Cargando usuarios...</Text>
       </View>
     );
   }
 
   if (users.length === 0) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <Text>No se encontraron usuarios.</Text>
+      <View style={styles.emptyContainer}>
+        <Text style={styles.emptyText}>No se encontraron usuarios.</Text>
       </View>
     );
   }
@@ -141,37 +192,76 @@ export default function UsersListScreen() {
 const styles = StyleSheet.create({
   list: {
     padding: 16,
+    backgroundColor: '#F7FAFC',
   },
   userItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#FFFFFF',
     padding: 16,
-    borderWidth: 1,
-    borderColor: '#ccc',
+    marginBottom: 12,
     borderRadius: 8,
-    marginBottom: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  userIcon: {
+    marginRight: 12,
+  },
+  userInfo: {
+    flex: 1,
   },
   userName: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: 'bold',
-    marginBottom: 4,
+    color: '#2B6CB0',
   },
   userEmail: {
     fontSize: 14,
-    color: '#555',
+    color: '#4A5568',
     marginBottom: 4,
   },
   userRole: {
     fontSize: 14,
-    color: '#555',
+    color: '#4A5568',
     marginBottom: 8,
   },
+  buttonContainer: {
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    marginTop: 8,
+  },
   assignButton: {
-    backgroundColor: '#007BFF',
     padding: 8,
-    borderRadius: 4,
-    marginBottom: 4,
+    borderRadius: 8,
+    marginBottom: 8,
   },
   assignButtonText: {
-    color: '#fff',
-    textAlign: 'center',
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  loaderContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F7FAFC',
+  },
+  loaderText: {
+    marginTop: 8,
+    fontSize: 16,
+    color: '#4A5568',
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F7FAFC',
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#4A5568',
   },
 });

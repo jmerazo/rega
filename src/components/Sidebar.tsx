@@ -4,6 +4,7 @@ import { DrawerContentScrollView, DrawerContentComponentProps } from '@react-nav
 import { auth, db } from '../../firebaseConfig';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
+import Icon from 'react-native-vector-icons/MaterialIcons';
 
 export default function Sidebar(props: DrawerContentComponentProps) {
   const [user, setUser] = useState<User | null>(null);
@@ -18,9 +19,9 @@ export default function Sidebar(props: DrawerContentComponentProps) {
         const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
         if (userDoc.exists()) {
           const userData = userDoc.data();
-          setRole(userData.role || null); // Set role
-          setName(userData.name || null); // Set name
-          setLastname(userData.lastname || null); // Set lastname
+          setRole(userData.role || null);
+          setName(userData.name || null);
+          setLastname(userData.lastname || null);
         } else {
           setRole(null);
           setName(null);
@@ -43,23 +44,25 @@ export default function Sidebar(props: DrawerContentComponentProps) {
   };
 
   return (
-    <DrawerContentScrollView {...props}>
+    <DrawerContentScrollView {...props} contentContainerStyle={styles.scrollView}>
       <View style={styles.container}>
-        {user?.photoURL ? (
-          <Image source={{ uri: user.photoURL }} style={styles.profileImage} />
-        ) : (
-          <View style={styles.profilePlaceholder}>
-            <Text style={styles.profilePlaceholderText}>
-              {user?.displayName ? user.displayName[0] : 'U'}
-            </Text>
-          </View>
-        )}
-        <Text style={styles.userName}>{name || 'Nombre no disponible'} {lastname || ''}</Text>
-        <Text style={styles.userEmail}>{user?.email || 'Correo no disponible'}</Text>
-        <Text style={styles.userRole}>Rol: {role || 'Sin asignar'}</Text>
+        <View style={styles.profileSection}>
+          {user?.photoURL ? (
+            <Image source={{ uri: user.photoURL }} style={styles.profileImage} />
+          ) : (
+            <View style={styles.profilePlaceholder}>
+              <Text style={styles.profilePlaceholderText}>
+                {user?.displayName ? user.displayName[0] : 'U'}
+              </Text>
+            </View>
+          )}
+          <Text style={styles.userName}>{name || 'Nombre no disponible'} {lastname || ''}</Text>
+          <Text style={styles.userEmail}>{user?.email || 'Correo no disponible'}</Text>
+          <Text style={styles.userRole}>Rol: {role || 'Sin asignar'}</Text>
+        </View>
 
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-          <Text style={styles.logoutButtonText}>Cerrar Sesión</Text>
+        <TouchableOpacity style={styles.logoutIcon} onPress={handleLogout}>
+          <Icon name="logout" size={24} color="#DB4437" />
         </TouchableOpacity>
       </View>
     </DrawerContentScrollView>
@@ -67,10 +70,16 @@ export default function Sidebar(props: DrawerContentComponentProps) {
 }
 
 const styles = StyleSheet.create({
+  scrollView: {
+    flexGrow: 1,
+  },
   container: {
     flex: 1,
     padding: 20,
     backgroundColor: '#FFFFFF',
+    justifyContent: 'space-between',
+  },
+  profileSection: {
     alignItems: 'center',
   },
   profileImage: {
@@ -108,29 +117,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: '#555',
-    marginBottom: 20,
   },
-  adminButton: {
-    backgroundColor: '#4A90E2',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 16,
-    alignItems: 'center',
-    width: '100%',
-  },
-  adminButtonText: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-  },
-  logoutButton: {
-    backgroundColor: '#DB4437',
-    borderRadius: 8,
-    padding: 12,
-    alignItems: 'center',
-    width: '100%',
-  },
-  logoutButtonText: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
+  logoutIcon: {
+    alignSelf: 'center',
+    marginTop: 20,
   },
 });
