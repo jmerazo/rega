@@ -8,7 +8,7 @@ import {
   ScrollView,
   Alert,
 } from 'react-native';
-import { collection, addDoc, doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { collection, addDoc, doc, getDoc, query, where, getDocs } from 'firebase/firestore';
 import { db, auth } from '../../firebaseConfig';
 import { useNavigation } from '@react-navigation/native';
 import { PersonsStackParamList } from '../navigation/PersonsStackNavigator';
@@ -17,10 +17,55 @@ import { Picker } from '@react-native-picker/picker';
 import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-type RegisterUserScreenNavigationProp = StackNavigationProp<
-  PersonsStackParamList,
-  'RegisterUser'
->;
+const syncDataToFirebase = async () => {
+  try {
+    // Obtener datos almacenados localmente
+    const localPersons = JSON.parse(
+      (await AsyncStorage.getItem('persons')) || '[]'
+    );
+
+    // Filtrar los datos no sincronizados
+    const unsyncedPersons = localPersons.filter(
+      (person: any) => person.isSynced === 0
+    );
+
+    for (const person of unsyncedPersons) {
+      // Verificar si ya existe en Firebase antes de subir
+      const q = query(
+        collection(db, 'persons'),
+        where('numeroDocumento', '==', person.numeroDocumento) // Validar por campo único
+      );
+      const querySnapshot = await getDocs(q);
+
+      if (querySnapshot.empty) {
+        try {
+          // Subir a Firebase
+          await addDoc(collection(db, 'persons'), { ...person, isSynced: 1 });
+
+          // Actualizar estado a sincronizado localmente solo si se subió correctamente
+          person.isSynced = 1;
+        } catch (uploadError) {
+          console.error(`Error subiendo ${person.numeroDocumento}:`, uploadError);
+        }
+      } else {
+        console.log(
+          `El documento con ID ${person.numeroDocumento} ya existe en Firebase.`
+        );
+      }
+    }
+
+    // Guardar los datos actualizados con isSynced = 1 en AsyncStorage
+    await AsyncStorage.setItem('persons', JSON.stringify(localPersons));
+
+    console.log('Sincronización con Firebase completada.');
+    Alert.alert('Sincronización exitosa', 'Los datos han sido sincronizados.');
+  } catch (error) {
+    console.error('Error sincronizando datos con Firebase:', error);
+    Alert.alert('Error', 'No se pudo sincronizar con Firebase.');
+  }
+};
+
+type RegisterUserScreenNavigationProp = StackNavigationProp<PersonsStackParamList, 'RegisterUser'>;
 
 export default function RegisterUserScreen() {
   const navigation = useNavigation<RegisterUserScreenNavigationProp>();
@@ -42,106 +87,66 @@ export default function RegisterUserScreen() {
 
   const [loadingLocation, setLoadingLocation] = useState(true);
   const [municipios, setMunicipios] = useState<string[]>([]);
-  const [loadingMunicipios, setLoadingMunicipios] = useState(true);
+  const [loadingMunicipios, setLoadingMunicipios] = useState(false);
   const [nextNumber, setNextNumber] = useState<number | null>(null);
 
   const handleChange = (name: string, value: string) => {
     setFormData((prevState) => ({ ...prevState, [name]: value }));
   };
-
-  // Sincronizar datos entre Firestore y AsyncStorage
-  const syncFirestoreData = async () => {
+  
+  const fetchRegistrador = async () => {
     try {
-      const unsubscribe = onSnapshot(collection(db, 'persons'), async (snapshot) => {
-        const firestorePersons = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        }));
-
-        // Guardar en AsyncStorage
-        await AsyncStorage.setItem('persons', JSON.stringify(firestorePersons));
-      });
-
-      return unsubscribe; // Permitir cancelar la suscripción
-    } catch (error) {
-      console.error('Error sincronizando datos:', error);
-    }
-  };
-
-  // Obtener datos del registrador
-  useEffect(() => {
-    const fetchRegistrador = async () => {
       const user = auth.currentUser;
       if (user) {
-        const registradorRef = doc(db, 'users', user.uid);
-        const registradorSnap = await getDoc(registradorRef);
-        if (registradorSnap.exists()) {
-          setRegistrador({ id: user.uid, ...registradorSnap.data() });
+        const storedRegistrador = await AsyncStorage.getItem('registrador');
+        if (storedRegistrador) {
+          setRegistrador(JSON.parse(storedRegistrador));
         } else {
-          Alert.alert('Error', 'No se encontró el usuario registrador.');
+          const registradorRef = doc(db, 'users', user.uid);
+          const registradorSnap = await getDoc(registradorRef);
+          if (registradorSnap.exists()) {
+            const registradorData = { id: user.uid, ...registradorSnap.data() };
+            setRegistrador(registradorData);
+            await AsyncStorage.setItem('registrador', JSON.stringify(registradorData));
+          } else {
+            Alert.alert('Error', 'No se encontró el usuario registrador.');
+          }
         }
       }
-    };
-
-    fetchRegistrador();
-  }, []);
-
-  // Calcular el siguiente número asignado
-  const calculateNextNumber = async () => {
-    if (!registrador) return;
-
-    try {
-      // Obtener registros locales de AsyncStorage
-      const localPersons = JSON.parse(
-        (await AsyncStorage.getItem('persons')) || '[]'
-      );
-
-      // Filtrar por registrador actual y obtener los números asignados
-      const usedNumbers = localPersons
-        .filter((person: any) => person.registradoPor === registrador.id)
-        .map((person: any) => Number(person.numeroAsignado));
-
-      const nextNumber =
-        usedNumbers.length > 0 ? Math.max(...usedNumbers) + 1 : registrador.currentNumber;
-
-      if (nextNumber <= registrador.numberEnd) {
-        setNextNumber(nextNumber);
-        handleChange('numeroAsignado', nextNumber.toString());
-      } else {
-        Alert.alert('Error', 'No hay números disponibles en el rango asignado.');
-        setNextNumber(null);
-      }
     } catch (error) {
-      console.error('Error calculando el siguiente número:', error);
+      console.error('Error obteniendo el registrador:', error);
     }
   };
 
-  // Cargar datos del departamento y municipios
-  useEffect(() => {
-    const fetchDepartment = async () => {
-      try {
+  const fetchDepartment = async () => {
+    try {
+      setLoadingMunicipios(true); // Aseguramos que se vea el estado de carga solo al inicio.
+      const storedDepartment = await AsyncStorage.getItem('department');
+      if (storedDepartment) {
+        const departmentData = JSON.parse(storedDepartment);
+        handleChange('departamento', departmentData.name || 'Putumayo');
+        setMunicipios(departmentData.localities || []);
+      } else {
         const docRef = doc(db, 'departments', '22'); // ID del departamento
         const docSnap = await getDoc(docRef);
 
         if (docSnap.exists()) {
-          const data = docSnap.data();
-          handleChange('departamento', data.name || 'Putumayo');
-          setMunicipios(data.localities || []);
+          const departmentData = docSnap.data();
+          handleChange('departamento', departmentData.name || 'Putumayo');
+          setMunicipios(departmentData.localities || []);
+          await AsyncStorage.setItem('department', JSON.stringify(departmentData));
         } else {
           Alert.alert('Error', 'No se encontró el documento del departamento.');
         }
-      } catch (error) {
-        console.error('Error obteniendo el departamento:', error);
-        Alert.alert('Error', 'No se pudo cargar el departamento.');
-      } finally {
-        setLoadingMunicipios(false);
       }
-    };
+    } catch (error) {
+      console.error('Error obteniendo el departamento:', error);
+      Alert.alert('Error', 'No se pudo cargar el departamento.');
+    } finally {
+      setLoadingMunicipios(false); // Se asegura que el estado de carga cambie después de completar.
+    }
+  };
 
-    fetchDepartment();
-  }, []);
-
-  // Obtener ubicación del usuario
   const fetchLocation = async () => {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -150,7 +155,7 @@ export default function RegisterUserScreen() {
         setLoadingLocation(false);
         return;
       }
-  
+
       const location = await Location.getCurrentPositionAsync({});
       const { latitude, longitude } = location.coords;
       handleChange('ubicacion', `${latitude}, ${longitude}`);
@@ -161,60 +166,91 @@ export default function RegisterUserScreen() {
       setLoadingLocation(false);
     }
   };
-  
+
   useEffect(() => {
-    fetchLocation();
+    const calculateNextNumber = async () => {
+      if (!registrador) {
+        console.warn('Registrador no definido, esperando datos...');
+        return;
+      }
+  
+      try {
+        // Obtener los registros locales
+        const localPersons = JSON.parse(
+          (await AsyncStorage.getItem('persons')) || '[]'
+        );
+  
+        // Filtrar solo los registros correspondientes al registrador actual
+        const usedNumbers = localPersons
+          .filter((person: any) => person.registradoPor === registrador.id)
+          .map((person: any) => Number(person.numeroAsignado));
+  
+        // Calcular el siguiente número basado en los números usados
+        const nextNumber =
+          usedNumbers.length > 0
+            ? Math.max(...usedNumbers) + 1
+            : registrador.currentNumber;
+  
+        if (nextNumber <= registrador.numberEnd) {
+          setNextNumber(nextNumber);
+          handleChange('numeroAsignado', nextNumber.toString());
+        } else {
+          Alert.alert('Error', 'No hay números disponibles en el rango asignado.');
+          setNextNumber(null);
+        }
+      } catch (error) {
+        console.error('Error calculando el siguiente número:', error);
+        Alert.alert('Error', 'No se pudo calcular el siguiente número.');
+      }
+    };
+  
+    calculateNextNumber();
+  }, [registrador]);  
+
+  // Cargar departamento y municipios desde Firestore o AsyncStorage
+  useEffect(() => {
+    const initializeData = async () => {
+      await fetchRegistrador();
+      await fetchLocation();
+      await fetchDepartment();
+  
+      // Sincronizar datos no sincronizados
+      await syncDataToFirebase();
+    };
+  
+    initializeData();
   }, []);
 
-  // Registrar un nuevo usuario
   const registerUser = async () => {
     try {
       if (!nextNumber) {
         Alert.alert('Error', 'No se pudo asignar un número.');
         return;
       }
-
+  
       const newFormData = {
         ...formData,
-        registradoPor: registrador.id,
+        registradoPor: registrador?.id,
         isSynced: 0, // Inicialmente no sincronizado
       };
-
-      // Guardar localmente en AsyncStorage
+  
+      // Guardar localmente
       const localPersons = JSON.parse(
         (await AsyncStorage.getItem('persons')) || '[]'
       );
       localPersons.push(newFormData);
       await AsyncStorage.setItem('persons', JSON.stringify(localPersons));
-
-      // Intentar sincronizar con Firestore
-      await addDoc(collection(db, 'persons'), {
-        ...newFormData,
-        isSynced: 1, // Marcado como sincronizado
-      });
-
+  
+      // Intentar sincronizar con Firebase
+      await syncDataToFirebase();
+  
       Alert.alert('Éxito', 'Usuario registrado correctamente');
       navigation.goBack();
     } catch (error) {
       console.error('Error registrando el usuario:', error);
       Alert.alert('Error', 'No se pudo registrar el usuario.');
     }
-  };
-
-  useEffect(() => {
-    let unsubscribe: (() => void) | undefined;
-  
-    const setupSync = async () => {
-      unsubscribe = await syncFirestoreData();
-      calculateNextNumber();
-    };
-  
-    setupSync();
-  
-    return () => {
-      if (unsubscribe) unsubscribe();
-    };
-  }, [registrador]);  
+  };  
 
   return (
     <ScrollView
@@ -222,7 +258,6 @@ export default function RegisterUserScreen() {
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="on-drag"
     >
-      {/* Tipo de Documento */}
       <Text style={styles.label}>Tipo de Documento</Text>
       <Picker
         selectedValue={formData.tipoDocumento}
@@ -297,7 +332,6 @@ export default function RegisterUserScreen() {
       <Text style={styles.label}>Departamento</Text>
       <Picker
         selectedValue={formData.departamento}
-        onValueChange={(value) => handleChange('departamento', value)}
         style={styles.picker}
         enabled={false}
       >

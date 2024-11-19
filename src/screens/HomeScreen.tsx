@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useContext } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   Alert,
   ScrollView,
   Dimensions,
+  ActivityIndicator
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialIcons';
@@ -16,14 +17,24 @@ import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import XLSX from 'xlsx';
 import { collection, getDocs, addDoc, query, where } from 'firebase/firestore';
-import { db } from '../../firebaseConfig';
+import { db, auth } from '../../firebaseConfig';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { RoleContext } from '../utils/RoleContext';
 
 type Person = {
+  nombres: string,
+  apellidos: string,
   numeroDocumento: string;
+  tipoDocumento: string,
+  departamento: string,
+  vereda: string,
+  ubicacion: string,
+  celular: string,
+  correo: string,
   municipio: string;
   isSynced: number;
   numeroAsignado: string;
+  registradoPor: string;
 };
 
 export default function HomeScreen() {
@@ -33,87 +44,230 @@ export default function HomeScreen() {
   );
   const [totalRecords, setTotalRecords] = useState<number>(0);
   const [pendingSyncCount, setPendingSyncCount] = useState<number>(0);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [initialized, setInitialized] = useState(false);
+  const [isRoleLoaded, setIsRoleLoaded] = useState(false); // Estado para controlar el cargue del rol
+  const userRole = useContext(RoleContext);
+
+  const fetchCurrentUserId = async () => {
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) {
+        throw new Error('Usuario no autenticado.');
+      }
+      await AsyncStorage.setItem('currentUserId', currentUser.uid);
+      setCurrentUserId(currentUser.uid); // Solo se actualiza aquí
+      return currentUser.uid;
+    } catch (error) {
+      console.error('Error al obtener el usuario actual:', error);
+      return null;
+    }
+  };
 
   const fetchData = async () => {
     try {
       const storedPersons: Person[] = JSON.parse(
         (await AsyncStorage.getItem('persons')) || '[]'
       );
-
-      // Filtrar los registros pendientes de sincronización
-      const unsyncedPersons = storedPersons.filter(
+  
+      let filteredPersons: Person[] = [];
+  
+      // Filtrar registros según el rol y el usuario actual
+      if (userRole === 'Registrador' && currentUserId) {
+        filteredPersons = storedPersons.filter(
+          (person) => person.registradoPor === currentUserId
+        );
+      } else if (userRole === 'Administrador') {
+        filteredPersons = storedPersons; // Administrador ve todos los registros
+      }
+  
+      // Contar registros no sincronizados
+      const unsyncedPersons = filteredPersons.filter(
         (person) => person.isSynced === 0
       );
       setPendingSyncCount(unsyncedPersons.length);
-
+  
+      // Calcular datos por municipio
       const counts: { [key: string]: number } = {};
-      storedPersons.forEach((person) => {
+      filteredPersons.forEach((person) => {
         const municipio = person.municipio || 'Sin especificar';
         counts[municipio] = (counts[municipio] || 0) + 1;
       });
-
+  
       setMunicipioData(counts);
-      setTotalRecords(storedPersons.length);
+      setTotalRecords(filteredPersons.length); // Actualizar registros totales
     } catch (error) {
       console.error('Error al cargar datos:', error);
       Alert.alert('Error', 'No se pudieron cargar los datos.');
     }
-  };
+  };  
+
+  useEffect(() => {
+    const initialize = async () => {
+      if (initialized) return; // Evita dobles inicializaciones
+
+      const storedUserId = await AsyncStorage.getItem('currentUserId');
+      if (!storedUserId) {
+        await fetchCurrentUserId(); // Solo se obtiene una vez
+      } else {
+        setCurrentUserId(storedUserId);
+      }
+
+      setIsRoleLoaded(true); // Marca que el rol está cargado
+      setInitialized(true); // Marca que ya se inicializó
+    };
+    initialize();
+  }, []);
+
+  useEffect(() => {
+    if (isRoleLoaded && userRole) {
+      // Solo ejecuta la consulta de datos si el rol ya está cargado
+      fetchData();
+    }
+  }, [isRoleLoaded, userRole, currentUserId]);
+
+  if (!isRoleLoaded) {
+    // Muestra un indicador de carga mientras se espera el rol
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <ActivityIndicator size="large" color="#004085" />
+      </SafeAreaView>
+    );
+  }
 
   const syncData = async () => {
     try {
+      // Obtén los datos almacenados localmente
       const storedPersons: Person[] = JSON.parse(
         (await AsyncStorage.getItem('persons')) || '[]'
       );
-
-      const unsyncedPersons = storedPersons.filter(
+  
+      // Descargar nuevos datos desde Firestore
+      const personsCollection = collection(db, 'persons');
+      const querySnapshot = await getDocs(personsCollection);
+      const firestorePersons: Person[] = [];
+  
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        firestorePersons.push({
+          nombres: data.nombres,
+          apellidos: data.apellidos,
+          numeroDocumento: data.numeroDocumento,
+          tipoDocumento: data.tipoDocumento,
+          departamento: data.departamento,
+          vereda: data.vereda,
+          ubicacion: data.ubicacion,
+          celular: data.celular,
+          correo: data.correo,
+          municipio: data.municipio,
+          isSynced: 1, // Los datos desde Firestore ya están sincronizados
+          numeroAsignado: data.numeroAsignado,
+          registradoPor: data.registradoPor,
+        });
+      });
+  
+      console.log('Datos descargados desde Firestore:', firestorePersons);
+  
+      // Combinar datos: Actualiza o agrega datos descargados desde Firestore al almacenamiento local
+      const mergedPersons = storedPersons.map((localPerson) => {
+        const matchingFirestorePerson = firestorePersons.find(
+          (firestorePerson) =>
+            firestorePerson.numeroDocumento === localPerson.numeroDocumento
+        );
+        return matchingFirestorePerson || localPerson; // Prefiere el dato más reciente
+      });
+  
+      // Agregar personas nuevas desde Firestore que no están en el almacenamiento local
+      firestorePersons.forEach((firestorePerson) => {
+        if (
+          !mergedPersons.some(
+            (person) =>
+              person.numeroDocumento === firestorePerson.numeroDocumento
+          )
+        ) {
+          mergedPersons.push(firestorePerson);
+        }
+      });
+  
+      console.log('Datos combinados:', mergedPersons);
+  
+      // Sincronizar datos locales no sincronizados con Firestore
+      const unsyncedPersons = mergedPersons.filter(
         (person) => person.isSynced === 0
       );
-
+  
       for (const person of unsyncedPersons) {
         const q = query(
           collection(db, 'persons'),
           where('numeroDocumento', '==', person.numeroDocumento)
         );
-        const querySnapshot = await getDocs(q);
-
-        if (querySnapshot.empty) {
-          await addDoc(collection(db, 'persons'), person);
+        const existingRecord = await getDocs(q);
+  
+        if (existingRecord.empty) {
+          await addDoc(personsCollection, person);
           person.isSynced = 1; // Marcar como sincronizado
         }
       }
-
-      // Guardar los datos actualizados en AsyncStorage
-      await AsyncStorage.setItem('persons', JSON.stringify(storedPersons));
-
+  
+      // Guardar los datos combinados actualizados en AsyncStorage
+      await AsyncStorage.setItem('persons', JSON.stringify(mergedPersons));
+  
       // Actualizar el estado de los pendientes
-      setPendingSyncCount(0);
-      Alert.alert('Éxito', 'Datos sincronizados correctamente.');
+      const pendingCount = mergedPersons.filter((person) => person.isSynced === 0)
+        .length;
+      setPendingSyncCount(pendingCount);
+  
+      Alert.alert('Éxito', 'Sincronización completada correctamente.');
     } catch (error) {
       console.error('Error al sincronizar datos:', error);
       Alert.alert('Error', 'No se pudo completar la sincronización.');
     }
-  };
+  };  
 
   const exportToExcel = async () => {
     try {
-      const data = Object.entries(municipioData).map(([municipio, count]) => ({
-        Municipio: municipio,
-        Registros: count,
+      // Obtener toda la tabla de `persons` desde AsyncStorage
+      const storedPersons: Person[] = JSON.parse(
+        (await AsyncStorage.getItem('persons')) || '[]'
+      );
+  
+      if (storedPersons.length === 0) {
+        Alert.alert('Advertencia', 'No hay datos para exportar.');
+        return;
+      }
+  
+      // Crear el formato para el Excel
+      const data = storedPersons.map((person) => ({
+        tipoDocumento: person.tipoDocumento,
+        Documento: person.numeroDocumento,
+        Nombres: person.nombres,
+        Apellidos: person.apellidos,
+        Celular: person.celular,
+        Correo: person.correo,
+        Vereda: person.vereda,
+        Ubicación: person.ubicacion,
+        Departamento: person.departamento || 'Sin especificar',
+        Municipio: person.municipio || 'Sin especificar',
+        NumeroAsignado: person.numeroAsignado,
+        RegistradoPor: person.registradoPor,
+        Sincronizado: person.isSynced === 1 ? 'Sí' : 'No',
       }));
-
+  
       const worksheet = XLSX.utils.json_to_sheet(data);
       const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'Registros por Municipio');
-
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Personas');
+  
+      // Convertir el workbook a formato base64 para guardar el archivo
       const excelData = XLSX.write(workbook, { type: 'base64', bookType: 'xlsx' });
-
-      const filePath = `${FileSystem.documentDirectory}RegistrosMunicipio.xlsx`;
-
+  
+      const filePath = `${FileSystem.documentDirectory}TablaPersons.xlsx`;
+  
+      // Guardar el archivo en el sistema de archivos
       await FileSystem.writeAsStringAsync(filePath, excelData, {
         encoding: FileSystem.EncodingType.Base64,
       });
-
+  
+      // Compartir el archivo o notificar al usuario
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(filePath);
       } else {
@@ -127,10 +281,6 @@ export default function HomeScreen() {
       Alert.alert('Error', 'No se pudo exportar el archivo.');
     }
   };
-
-  useEffect(() => {
-    fetchData();
-  }, []);
 
   const chartData = {
     labels: Object.keys(municipioData),
@@ -173,7 +323,11 @@ export default function HomeScreen() {
         {/* Card de registros totales */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Registros Totales</Text>
-          <Text style={styles.cardCount}>{totalRecords} / 200</Text>
+          {userRole === 'Administrador' ? (
+            <Text style={styles.cardCount}>{totalRecords}</Text>
+          ) : (
+            <Text style={styles.cardCount}>{totalRecords} / 200</Text>
+          )}
         </View>
 
         {/* Gráfica de barras */}
@@ -223,7 +377,6 @@ const styles = StyleSheet.create({
   syncButton: {
     position: 'absolute',
     right: 10,
-    top: 10,
     flexDirection: 'row',
     alignItems: 'center',
   },

@@ -3,6 +3,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { auth, db } from '../../firebaseConfig';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { createDrawerNavigator } from '@react-navigation/drawer';
 import { createStackNavigator } from '@react-navigation/stack';
@@ -36,17 +37,27 @@ export default function AppNavigator() {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
         setUser(currentUser);
+  
+        // Obtén y almacena el rol del usuario
         const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
         if (userDoc.exists()) {
           const userData = userDoc.data();
-          setRole(userData.role || null); // Obtener el rol del usuario
+          const userRole = userData.role || null;
+          setRole(userRole);
+  
+          // Almacena uid y rol en AsyncStorage
+          await AsyncStorage.setItem('currentUserId', currentUser.uid);
+          await AsyncStorage.setItem('userRole', userRole || '');
         } else {
           console.log('El usuario no tiene un rol asignado.');
           setRole(null);
+          await AsyncStorage.removeItem('userRole'); // Limpia rol si no está definido
         }
       } else {
         setUser(null);
         setRole(null);
+        await AsyncStorage.removeItem('currentUserId'); // Limpia uid si el usuario no está autenticado
+        await AsyncStorage.removeItem('userRole'); // Limpia rol si el usuario no está autenticado
       }
       setInitializing(false);
     });

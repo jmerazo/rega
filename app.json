@@ -4,11 +4,11 @@
     "slug": "rega",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/logos/rega.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/screen-rega.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
@@ -25,13 +25,18 @@
         "ACCESS_COARSE_LOCATION"
       ],
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./assets/logos/rega.png",
         "backgroundColor": "#ffffff"
-      }
+      },
+      "package": "com.marroquin.rega"
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/logos/rega.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "ec23e32e-9db1-4c47-b1ae-f4a5d2b04bc4"
+      }
     }
   }
 }
-

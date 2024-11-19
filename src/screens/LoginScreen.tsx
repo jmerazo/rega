@@ -1,6 +1,17 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, SafeAreaView, KeyboardAvoidingView, Platform, Alert } from 'react-native';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  SafeAreaView,
+  KeyboardAvoidingView,
+  Platform,
+  Alert,
+} from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import { Image } from 'react-native';
 import { auth } from '../../firebaseConfig';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { AuthStackParamList } from '../navigation/types';
@@ -15,17 +26,20 @@ type Props = {
 export default function LoginScreen({ navigation }: Props) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false); // Estado para alternar visibilidad
+  const [showPassword, setShowPassword] = useState(false);
 
   const togglePasswordVisibility = () => {
     setShowPassword(!showPassword);
   };
 
-  const loginUser = () => {
-    signInWithEmailAndPassword(auth, email, password)
-      .catch(error => {
-        Alert.alert('Error de inicio de sesión', error.message);
-      });
+  const loginUser = async () => {
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      Alert.alert('Inicio de sesión exitoso', '¡Bienvenido!');
+    } catch (error) {
+      const errorMessage = (error as Error).message || 'Error desconocido';
+      Alert.alert('Error de inicio de sesión', errorMessage);
+    }
   };
 
   return (
@@ -35,8 +49,14 @@ export default function LoginScreen({ navigation }: Props) {
         style={styles.inner}
       >
         <View style={styles.loginContainer}>
-          <Text style={styles.appName}>REGA</Text>
-          <Text style={styles.title}>Iniciar Sesión</Text>
+          <View style={[styles.loginContainer, { alignItems: 'center' }]}>
+            <Image
+              source={require('../../assets/logos/rega.png')}
+              style={styles.logo}
+            />
+            <Text style={styles.appName}>REGA</Text>
+            <Text style={styles.title}>Iniciar Sesión</Text>
+          </View>
           <TextInput
             style={styles.input}
             placeholder="Correo electrónico"
@@ -77,6 +97,12 @@ export default function LoginScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
+  logo: {
+    width: 100,
+    height: 100,
+    resizeMode: 'contain',
+    marginBottom: 10,
+  },
   container: {
     flex: 1,
     backgroundColor: '#F0F4F8',
@@ -92,7 +118,7 @@ const styles = StyleSheet.create({
     maxWidth: 400,
   },
   appName: {
-    fontSize: 50,
+    fontSize: 30,
     fontWeight: '800',
     color: '#2B6CB0',
     marginBottom: 8,
