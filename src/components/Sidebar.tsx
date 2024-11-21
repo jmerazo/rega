@@ -1,16 +1,30 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
-import { DrawerContentScrollView, DrawerContentComponentProps } from '@react-navigation/drawer';
+import { DrawerContentScrollView, DrawerContentComponentProps, DrawerItem } from '@react-navigation/drawer';
+import { useNavigation } from '@react-navigation/native';
 import { auth, db } from '../../firebaseConfig';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { StackNavigationProp } from '@react-navigation/stack';
+import { DrawerNavigationProp } from '@react-navigation/drawer'; // Importa DrawerNavigationProp
+import { DrawerParamList } from '../navigation/navigation'; // Ajusta la ruta según tu estructura
 
 export default function Sidebar(props: DrawerContentComponentProps) {
   const [user, setUser] = useState<User | null>(null);
   const [role, setRole] = useState<string | null>(null);
   const [name, setName] = useState<string | null>(null);
   const [lastname, setLastname] = useState<string | null>(null);
+
+  type SidebarNavigationProp = DrawerNavigationProp<DrawerParamList>;
+
+  const navigation = useNavigation<SidebarNavigationProp>();
+
+  // Función para navegar a la pantalla de registros pendientes
+  const navigateToUnsyncedPersons = () => {
+    navigation.navigate('UnsyncedPersons');
+  };
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -60,6 +74,14 @@ export default function Sidebar(props: DrawerContentComponentProps) {
           <Text style={styles.userEmail}>{user?.email || 'Correo no disponible'}</Text>
           <Text style={styles.userRole}>Rol: {role || 'Sin asignar'}</Text>
         </View>
+
+        <DrawerItem
+          label="No sincronizados"
+          onPress={navigateToUnsyncedPersons}
+          icon={({ color, size }) => (
+            <Icon name="sync-problem" color={color} size={size} />
+          )}
+        />
 
         <TouchableOpacity style={styles.logoutIcon} onPress={handleLogout}>
           <Icon name="logout" size={24} color="#DB4437" />

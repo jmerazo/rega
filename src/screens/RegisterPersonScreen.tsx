@@ -10,12 +10,14 @@ import {
 } from 'react-native';
 import { collection, addDoc, doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { db, auth } from '../../firebaseConfig';
+import NetInfo from '@react-native-community/netinfo';
 import { useNavigation } from '@react-navigation/native';
 import { PersonsStackParamList } from '../navigation/PersonsStackNavigator';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { Picker } from '@react-native-picker/picker';
 import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Database } from '../database/database';
 
 type RegisterUserScreenNavigationProp = StackNavigationProp<
   PersonsStackParamList,
@@ -57,53 +59,111 @@ export default function RegisterUserScreen() {
           id: doc.id,
           ...doc.data(),
         }));
-
-        // Guardar en AsyncStorage
-        await AsyncStorage.setItem('persons', JSON.stringify(firestorePersons));
+  
+        // Recuperar datos locales existentes
+        const localPersonsData = await AsyncStorage.getItem('persons');
+        const localPersons = localPersonsData ? JSON.parse(localPersonsData) : [];
+  
+        // Fusionar datos locales y Firestore
+        const mergedPersons = [...localPersons, ...firestorePersons].reduce(
+          (acc, person) => {
+            if (!acc.find((p: Person) => p.numeroDocumento === person.numeroDocumento)) {
+              acc.push(person);
+            }
+            return acc;
+          },
+          []
+        );
+  
+        // Guardar datos fusionados
+        await AsyncStorage.setItem('persons', JSON.stringify(mergedPersons));
       });
-
-      return unsubscribe; // Permitir cancelar la suscripción
+  
+      return unsubscribe;
     } catch (error) {
       console.error('Error sincronizando datos:', error);
     }
   };
-
+  
   // Obtener datos del registrador
   useEffect(() => {
     const fetchRegistrador = async () => {
-      const user = auth.currentUser;
-      if (user) {
-        const registradorRef = doc(db, 'users', user.uid);
-        const registradorSnap = await getDoc(registradorRef);
-        if (registradorSnap.exists()) {
-          setRegistrador({ id: user.uid, ...registradorSnap.data() });
-        } else {
-          Alert.alert('Error', 'No se encontró el usuario registrador.');
+      try {
+        // Obtener el usuario actual
+        const user = auth.currentUser;
+  
+        if (!user) {
+        Alert.alert('Error', 'No se encontró una sesión activa.');
+          return;
         }
+   
+        // Verificar el estado de conexión
+        const netState = await NetInfo.fetch();
+        if (netState.isConnected) {
+          console.log('Conexión a internet detectada. Cargando datos desde Firestore...');
+          // Obtener detalles del usuario desde Firestore
+          const registradorRef = doc(db, 'users', user.uid);
+          const registradorSnap = await getDoc(registradorRef);
+  
+          if (registradorSnap.exists()) {
+            const registradorData = { id: user.uid, ...registradorSnap.data() };
+            setRegistrador(registradorData);
+  
+            // Almacenar los datos localmente
+            await AsyncStorage.setItem('registrador', JSON.stringify(registradorData));
+          } else {
+           Alert.alert('Error', 'No se encontró el usuario registrador.');
+          }
+        } else {
+         // Obtener datos locales de AsyncStorage
+          const localRegistrador = await AsyncStorage.getItem('registrador');
+          if (localRegistrador) {
+            const registradorData = JSON.parse(localRegistrador);
+            setRegistrador(registradorData);
+         } else {
+           Alert.alert('Error', 'No se encontraron datos locales del registrador.');
+          }
+        }
+      } catch (error) {
+        Alert.alert('Error', 'No se pudo cargar la información del registrador.');
       }
     };
-
+  
     fetchRegistrador();
   }, []);
 
   // Calcular el siguiente número asignado
   const calculateNextNumber = async () => {
-    if (!registrador) return;
-
+    if (!registrador) {
+      console.warn('Registrador no disponible.');
+      return;
+    }
+  
     try {
+      const db = Database.getInstance();
+  
       // Obtener registros locales de AsyncStorage
-      const localPersons = JSON.parse(
-        (await AsyncStorage.getItem('persons')) || '[]'
+      const localPersons = await db.getData('persons');
+  
+      // Validar recuperación de datos
+      if (!localPersons || !Array.isArray(localPersons)) {
+        Alert.alert('Error', 'No se encontraron datos locales para calcular el siguiente número.');
+        return;
+      }
+  
+      // Filtrar por registrador actual
+      const filteredPersons = localPersons.filter(
+        (person: any) => person.registradoPor === registrador.id
       );
-
-      // Filtrar por registrador actual y obtener los números asignados
-      const usedNumbers = localPersons
-        .filter((person: any) => person.registradoPor === registrador.id)
-        .map((person: any) => Number(person.numeroAsignado));
-
+  
+  
+      // Obtener los números asignados
+      const usedNumbers = filteredPersons.map((person: any) => Number(person.numeroAsignado));
+    
+      // Calcular el siguiente número
       const nextNumber =
         usedNumbers.length > 0 ? Math.max(...usedNumbers) + 1 : registrador.currentNumber;
-
+    
       if (nextNumber <= registrador.numberEnd) {
         setNextNumber(nextNumber);
         handleChange('numeroAsignado', nextNumber.toString());
@@ -112,31 +172,37 @@ export default function RegisterUserScreen() {
         setNextNumber(null);
       }
     } catch (error) {
-      console.error('Error calculando el siguiente número:', error);
+      Alert.alert('Error', 'Ocurrió un problema al calcular el siguiente número.');
     }
-  };
+  };   
 
   // Cargar datos del departamento y municipios
   useEffect(() => {
     const fetchDepartment = async () => {
       try {
-        const docRef = doc(db, 'departments', '22'); // ID del departamento
-        const docSnap = await getDoc(docRef);
-
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          handleChange('departamento', data.name || 'Putumayo');
-          setMunicipios(data.localities || []);
+        const db = Database.getInstance();
+    
+        // Recuperar datos de AsyncStorage
+        const storedDepartments = await db.getData('departments');
+        if (storedDepartments) {
+          // Busca el departamento específico (ID '22' en este caso)
+          const department = storedDepartments.find((dept: any) => dept.id === '22');
+          if (department) {
+            handleChange('departamento', department.name || 'Putumayo');
+            setMunicipios(department.localities || []);
+          } else {
+            Alert.alert('Error', 'Departamento no encontrado en datos sincronizados.');
+          }
         } else {
-          Alert.alert('Error', 'No se encontró el documento del departamento.');
+          Alert.alert('Error', 'Datos de departamentos no disponibles offline.');
         }
       } catch (error) {
-        console.error('Error obteniendo el departamento:', error);
+        console.error('Error obteniendo el departamento desde AsyncStorage:', error);
         Alert.alert('Error', 'No se pudo cargar el departamento.');
       } finally {
         setLoadingMunicipios(false);
       }
-    };
+    };    
 
     fetchDepartment();
   }, []);
@@ -166,6 +232,22 @@ export default function RegisterUserScreen() {
     fetchLocation();
   }, []);
 
+  type Person = {
+    nombres: string;
+    apellidos: string;
+    numeroDocumento: string;
+    tipoDocumento: string;
+    departamento: string;
+    vereda: string;
+    ubicacion: string;
+    celular: string;
+    correo: string;
+    municipio: string;
+    isSynced: number;
+    numeroAsignado: string;
+    registradoPor: string;
+  };  
+
   // Registrar un nuevo usuario
   const registerUser = async () => {
     try {
@@ -173,33 +255,70 @@ export default function RegisterUserScreen() {
         Alert.alert('Error', 'No se pudo asignar un número.');
         return;
       }
-
-      const newFormData = {
+  
+      const user = auth.currentUser;
+      if (!user) {
+        Alert.alert('Error', 'No se encontró una sesión activa.');
+        return;
+      }
+  
+      const newFormData: Person = {
         ...formData,
-        registradoPor: registrador.id,
-        isSynced: 0, // Inicialmente no sincronizado
+        registradoPor: user.uid,
+        isSynced: 0,
       };
-
-      // Guardar localmente en AsyncStorage
-      const localPersons = JSON.parse(
-        (await AsyncStorage.getItem('persons')) || '[]'
-      );
-      localPersons.push(newFormData);
-      await AsyncStorage.setItem('persons', JSON.stringify(localPersons));
-
-      // Intentar sincronizar con Firestore
-      await addDoc(collection(db, 'persons'), {
-        ...newFormData,
-        isSynced: 1, // Marcado como sincronizado
+  
+      // Recuperar datos locales existentes
+      const localPersonsData = await AsyncStorage.getItem('persons');
+      const localPersons: Person[] = localPersonsData
+        ? JSON.parse(localPersonsData)
+        : [];
+  
+      // Agregar nuevo registro sin sobrescribir
+      const updatedPersons = [...localPersons, newFormData];
+      await AsyncStorage.setItem('persons', JSON.stringify(updatedPersons));
+  
+      // Sincronizar si hay conexión
+      const netState = await NetInfo.fetch();
+      if (netState.isConnected) {
+        try {
+          await addDoc(collection(db, 'persons'), {
+            ...newFormData,
+            isSynced: 1,
+          });
+  
+          // Actualizar sincronización local
+          const syncedPersons = updatedPersons.map((person) =>
+            person.numeroDocumento === newFormData.numeroDocumento
+              ? { ...newFormData, isSynced: 1 }
+              : person
+          );
+          await AsyncStorage.setItem('persons', JSON.stringify(syncedPersons));
+        } catch (syncError) {
+          console.warn('No se pudo sincronizar con Firestore:', syncError);
+        }
+      }
+  
+      // Limpiar formulario y navegar
+      setFormData({
+        tipoDocumento: 'Cédula de ciudadanía',
+        numeroDocumento: '',
+        nombres: '',
+        apellidos: '',
+        celular: '',
+        correo: '',
+        ubicacion: '',
+        vereda: '',
+        departamento: '',
+        municipio: '',
+        numeroAsignado: '',
       });
-
-      Alert.alert('Éxito', 'Usuario registrado correctamente');
-      navigation.goBack();
+      Alert.alert('Éxito', 'Usuario registrado correctamente.');
+      navigation.navigate('UsersList');
     } catch (error) {
-      console.error('Error registrando el usuario:', error);
       Alert.alert('Error', 'No se pudo registrar el usuario.');
     }
-  };
+  };     
 
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;

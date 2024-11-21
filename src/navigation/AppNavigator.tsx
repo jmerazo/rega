@@ -8,6 +8,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createDrawerNavigator } from '@react-navigation/drawer';
 import { createStackNavigator } from '@react-navigation/stack';
 import BottomTabNavigator from './BottomTabNavigator';
+import DrawerNavigator from './DrawerNavigator'; 
 import Sidebar from '../components/Sidebar';
 import LoginScreen from '../screens/LoginScreen';
 import RegisterScreen from '../screens/RegisterScreen';
@@ -17,7 +18,7 @@ import { RoleContext } from '../utils/RoleContext';
 const Drawer = createDrawerNavigator();
 const Stack = createStackNavigator();
 
-function DrawerNavigator() {
+/* function DrawerNavigator() {
   return (
     <Drawer.Navigator
       drawerContent={(props) => <Sidebar {...props} />}
@@ -27,7 +28,7 @@ function DrawerNavigator() {
     </Drawer.Navigator>
   );
 }
-
+ */
 export default function AppNavigator() {
   const [user, setUser] = useState<User | null>(null);
   const [role, setRole] = useState<string | null>(null);
@@ -70,7 +71,8 @@ export default function AppNavigator() {
     <RoleContext.Provider value={role}>
       <NavigationContainer>
         {user ? (
-          <DrawerNavigator />
+          // Utiliza el DrawerNavigator importado
+          <DrawerNavigator role={role} />
         ) : (
           <Stack.Navigator screenOptions={{ headerShown: false }}>
             <Stack.Screen name="Login" component={LoginScreen} />

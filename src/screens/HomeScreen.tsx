@@ -10,6 +10,7 @@ import {
   ActivityIndicator
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import NetInfo from '@react-native-community/netinfo';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useNavigation, DrawerActions } from '@react-navigation/native';
 import { BarChart } from 'react-native-chart-kit';
@@ -20,6 +21,8 @@ import { collection, getDocs, addDoc, query, where } from 'firebase/firestore';
 import { db, auth } from '../../firebaseConfig';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { RoleContext } from '../utils/RoleContext';
+import { useFocusEffect } from '@react-navigation/native';
+
 
 type Person = {
   nombres: string,
@@ -48,6 +51,7 @@ export default function HomeScreen() {
   const [initialized, setInitialized] = useState(false);
   const [isRoleLoaded, setIsRoleLoaded] = useState(false); // Estado para controlar el cargue del rol
   const userRole = useContext(RoleContext);
+  const [isConnected, setIsConnected] = useState(true);
 
   const fetchCurrentUserId = async () => {
     try {
@@ -63,6 +67,12 @@ export default function HomeScreen() {
       return null;
     }
   };
+
+  useFocusEffect(
+    React.useCallback(() => {
+      fetchData();
+    }, [currentUserId, userRole])
+  );  
 
   const fetchData = async () => {
     try {
@@ -100,7 +110,7 @@ export default function HomeScreen() {
       console.error('Error al cargar datos:', error);
       Alert.alert('Error', 'No se pudieron cargar los datos.');
     }
-  };  
+  };
 
   useEffect(() => {
     const initialize = async () => {
@@ -137,62 +147,20 @@ export default function HomeScreen() {
 
   const syncData = async () => {
     try {
+      // Verificar conexión a Internet
+      const netState = await NetInfo.fetch();
+      if (!netState.isConnected) {
+        Alert.alert('Sin conexión', 'No tienes conexión a Internet.');
+        return; // Detener el proceso de sincronización
+      }
+  
       // Obtén los datos almacenados localmente
-      const storedPersons: Person[] = JSON.parse(
+      let storedPersons: Person[] = JSON.parse(
         (await AsyncStorage.getItem('persons')) || '[]'
       );
   
-      // Descargar nuevos datos desde Firestore
-      const personsCollection = collection(db, 'persons');
-      const querySnapshot = await getDocs(personsCollection);
-      const firestorePersons: Person[] = [];
-  
-      querySnapshot.forEach((doc) => {
-        const data = doc.data();
-        firestorePersons.push({
-          nombres: data.nombres,
-          apellidos: data.apellidos,
-          numeroDocumento: data.numeroDocumento,
-          tipoDocumento: data.tipoDocumento,
-          departamento: data.departamento,
-          vereda: data.vereda,
-          ubicacion: data.ubicacion,
-          celular: data.celular,
-          correo: data.correo,
-          municipio: data.municipio,
-          isSynced: 1, // Los datos desde Firestore ya están sincronizados
-          numeroAsignado: data.numeroAsignado,
-          registradoPor: data.registradoPor,
-        });
-      });
-  
-      console.log('Datos descargados desde Firestore:', firestorePersons);
-  
-      // Combinar datos: Actualiza o agrega datos descargados desde Firestore al almacenamiento local
-      const mergedPersons = storedPersons.map((localPerson) => {
-        const matchingFirestorePerson = firestorePersons.find(
-          (firestorePerson) =>
-            firestorePerson.numeroDocumento === localPerson.numeroDocumento
-        );
-        return matchingFirestorePerson || localPerson; // Prefiere el dato más reciente
-      });
-  
-      // Agregar personas nuevas desde Firestore que no están en el almacenamiento local
-      firestorePersons.forEach((firestorePerson) => {
-        if (
-          !mergedPersons.some(
-            (person) =>
-              person.numeroDocumento === firestorePerson.numeroDocumento
-          )
-        ) {
-          mergedPersons.push(firestorePerson);
-        }
-      });
-  
-      console.log('Datos combinados:', mergedPersons);
-  
       // Sincronizar datos locales no sincronizados con Firestore
-      const unsyncedPersons = mergedPersons.filter(
+      const unsyncedPersons = storedPersons.filter(
         (person) => person.isSynced === 0
       );
   
@@ -204,17 +172,54 @@ export default function HomeScreen() {
         const existingRecord = await getDocs(q);
   
         if (existingRecord.empty) {
-          await addDoc(personsCollection, person);
-          person.isSynced = 1; // Marcar como sincronizado
+          // Subir el registro con isSynced = 1
+          await addDoc(collection(db, 'persons'), {
+            ...person,
+            isSynced: 1,
+          });
+        } else {
+          // Opcionalmente, actualizar el documento existente
+          // await updateDoc(existingRecord.docs[0].ref, { isSynced: 1 });
         }
+  
+        // Marcar como sincronizado en storedPersons
+        person.isSynced = 1;
       }
   
-      // Guardar los datos combinados actualizados en AsyncStorage
-      await AsyncStorage.setItem('persons', JSON.stringify(mergedPersons));
+      // Descargar nuevos datos desde Firestore
+      const personsCollection = collection(db, 'persons');
+      const querySnapshot = await getDocs(personsCollection);
+      const firestorePersons: Person[] = [];
   
-      // Actualizar el estado de los pendientes
-      const pendingCount = mergedPersons.filter((person) => person.isSynced === 0)
-        .length;
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        firestorePersons.push({
+          ...data,
+          isSynced: 1, // Aseguramos que los datos descargados tienen isSynced = 1
+        } as Person); // Casting a tipo Person si es necesario
+      });
+  
+      // Combinar datos locales y de Firestore
+      const personMap = new Map();
+  
+      // Añadir datos locales al mapa
+      for (const person of storedPersons) {
+        personMap.set(person.numeroDocumento, person);
+      }
+  
+      // Añadir o actualizar datos de Firestore al mapa
+      for (const person of firestorePersons) {
+        personMap.set(person.numeroDocumento, person);
+      }
+  
+      // Convertir el mapa a un array y guardar en AsyncStorage
+      storedPersons = Array.from(personMap.values());
+      await AsyncStorage.setItem('persons', JSON.stringify(storedPersons));
+  
+      // Actualizar el conteo de pendientes
+      const pendingCount = storedPersons.filter(
+        (person) => person.isSynced === 0
+      ).length;
       setPendingSyncCount(pendingCount);
   
       Alert.alert('Éxito', 'Sincronización completada correctamente.');
@@ -222,7 +227,7 @@ export default function HomeScreen() {
       console.error('Error al sincronizar datos:', error);
       Alert.alert('Error', 'No se pudo completar la sincronización.');
     }
-  };  
+  };      
 
   const exportToExcel = async () => {
     try {
@@ -291,9 +296,12 @@ export default function HomeScreen() {
     ],
   };
 
+  const maxDataValue = Math.max(...Object.values(municipioData));
+  const segments = maxDataValue > 5 ? 5 : maxDataValue; // Limita a 5 divisiones
+
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.container}>
+      <ScrollView contentContainerStyle={[styles.container, { paddingBottom: 80 }]}>
         {/* Botón de sincronización en la esquina superior derecha */}
         <TouchableOpacity
           style={styles.syncButton}
@@ -307,7 +315,7 @@ export default function HomeScreen() {
             </View>
           )}
         </TouchableOpacity>
-
+  
         {/* Botón del menú */}
         <TouchableOpacity
           style={styles.menuButton}
@@ -316,10 +324,10 @@ export default function HomeScreen() {
         >
           <Icon name="menu" size={24} color="#004085" />
         </TouchableOpacity>
-
+  
         <Text style={styles.title}>Bienvenido a REGA</Text>
         <Text style={styles.subtitle}>Resumen de datos registrados</Text>
-
+  
         {/* Card de registros totales */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Registros Totales</Text>
@@ -329,36 +337,43 @@ export default function HomeScreen() {
             <Text style={styles.cardCount}>{totalRecords} / 200</Text>
           )}
         </View>
-
+  
         {/* Gráfica de barras */}
         {Object.keys(municipioData).length > 0 ? (
           <BarChart
             data={chartData}
-            width={Dimensions.get('window').width - 32}
-            height={220}
-            yAxisLabel=""
-            yAxisSuffix=""
+            width={Math.max(Dimensions.get('window').width - 50, Object.keys(municipioData).length * 30)}
+            height={300}
+            yAxisLabel="" // Etiqueta del eje Y (vacío si no se usa)
+            yAxisSuffix="" // Sufijo del eje Y (vacío si no se usa)
+            fromZero={true} // Comienza desde 0
+            segments={segments} // Número de divisiones en el eje Y
             chartConfig={{
               backgroundColor: '#FFFFFF',
               backgroundGradientFrom: '#F4F7FA',
               backgroundGradientTo: '#F4F7FA',
-              decimalPlaces: 0,
+              decimalPlaces: 0, // Sin decimales
               color: (opacity = 1) => `rgba(44, 130, 201, ${opacity})`,
               labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
             }}
             style={styles.chart}
+            verticalLabelRotation={-90} // Rota las etiquetas del eje X
           />
         ) : (
           <Text style={styles.noDataText}>No hay datos para mostrar.</Text>
         )}
-
-        {/* Botón para exportar a Excel */}
-        <TouchableOpacity style={styles.exportButton} onPress={exportToExcel}>
-          <Text style={styles.exportButtonText}>Exportar a Excel</Text>
-        </TouchableOpacity>
       </ScrollView>
+  
+      {/* Botón para exportar a Excel */}
+      <TouchableOpacity
+        style={styles.exportButton}
+        onPress={exportToExcel}
+        activeOpacity={0.7}
+      >
+        <Icon name="file-download" size={24} color="#FFFFFF" />
+      </TouchableOpacity>
     </SafeAreaView>
-  );
+  );  
 }
 
 const styles = StyleSheet.create({
@@ -367,12 +382,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#F0F4F8',
   },
   container: {
-    flexGrow: 1,
-    padding: 16,
-  },
+  flexGrow: 1,
+  padding: 16,
+  paddingBottom: 80, // Añade espacio inferior para el botón
+},
   menuButton: {
     position: 'absolute',
     left: 10,
+    paddingBottom: 80
   },
   syncButton: {
     position: 'absolute',
@@ -439,12 +456,15 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   exportButton: {
+    position: 'absolute',
+    bottom: 20,
+    right: 20,
     backgroundColor: '#3182CE',
     padding: 12,
-    borderRadius: 8,
+    borderRadius: 30,
     alignItems: 'center',
-    marginTop: 20,
-    width: '100%',
+    justifyContent: 'center',
+    elevation: 5,
   },
   exportButtonText: {
     color: '#FFFFFF',

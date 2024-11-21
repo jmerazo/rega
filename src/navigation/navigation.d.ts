@@ -7,6 +7,13 @@ type RootStackParamList = {
   PasswordReset: undefined;
   Login: undefined;
   Panel: undefined;
+  UnsyncedPersons: undefined;
+};
+
+export type DrawerParamList = {
+  Tabs: undefined;
+  AdminPanel: undefined;
+  UnsyncedPersons: undefined; // Agrega esta línea
 };
 
 type HomeScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Home'>;
@@ -14,12 +21,14 @@ type RegisterScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Reg
 type LoginScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Login'>;
 type PasswordResetScreenNavigationProp = StackNavigationProp<RootStackParamList, 'PasswordReset'>;
 type AdminUsersScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Panel'>;
+type UnsyncedPersonsScreenNavigationProp = StackNavigationProp<RootStackParamList, 'UnsyncedPersons'>;
 
 type HomeScreenRouteProp = RouteProp<RootStackParamList, 'Home'>;
 type RegisterScreenRouteProp = RouteProp<RootStackParamList, 'Register'>;
 type LoginScreenRouteProp = RouteProp<RootStackParamList, 'Login'>;
 type PasswordResetScreenRouteProp = RouteProp<RootStackParamList, 'PasswordReset'>;
 type AdminUsersScreenRouteProp = RouteProp<RootStackParamList, 'Panel'>;
+type UnsyncedPersonsScreenRouteProp = RouteProp<RootStackParamList, 'UnsyncedPersons'>;
 
 export {
   RootStackParamList,
@@ -31,5 +40,9 @@ export {
   LoginScreenRouteProp,
   AdminUsersScreenRouteProp,
   PasswordResetScreenNavigationProp,
-  PasswordResetScreenRouteProp
+  PasswordResetScreenRouteProp,
+  UnsyncedPersonsScreenNavigationProp,
+  UnsyncedPersonsScreenRouteProp,
+  RootStackParamList,
+  DrawerParamList,
 };

@@ -34,6 +34,8 @@ export const downloadDataToAsyncStorage = async () => {
     await db.saveData('persons', persons);
 
     console.log('Data saved to AsyncStorage successfully.');
+    /* const savedPersons = await db.getData('persons');
+    console.log('Saved persons data:', savedPersons); */
   } catch (error) {
     console.error('Error downloading data from Firestore:', error);
     throw error;
